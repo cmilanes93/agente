@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import smtplib
+import socket
 from email.message import EmailMessage
 
 from app.config import Professional
@@ -15,6 +16,38 @@ logger = logging.getLogger(__name__)
 
 class EmailSendError(Exception):
     """No se pudo enviar el mail de aviso."""
+
+
+class _IPv4SMTP_SSL(smtplib.SMTP_SSL):
+    """SMTP_SSL forzando IPv4.
+
+    Algunos hostings (Render incluido) resuelven smtp.gmail.com a una
+    dirección IPv6 sin tener una ruta de salida IPv6 funcional, lo que da
+    "OSError: [Errno 101] Network is unreachable" al conectar — nada que
+    ver con el usuario/contraseña. Forzamos la conexión por IPv4.
+    """
+
+    def _get_socket(self, host, port, timeout):
+        addr_info = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+        last_error: OSError | None = None
+        raw_socket: socket.socket | None = None
+
+        for family, socktype, proto, _, sockaddr in addr_info:
+            try:
+                raw_socket = socket.socket(family, socktype, proto)
+                if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+                    raw_socket.settimeout(timeout)
+                raw_socket.connect(sockaddr)
+                break
+            except OSError as exc:
+                last_error = exc
+                if raw_socket is not None:
+                    raw_socket.close()
+                raw_socket = None
+        else:
+            raise last_error or OSError("No se pudo resolver una dirección IPv4 para el servidor SMTP.")
+
+        return self.context.wrap_socket(raw_socket, server_hostname=self._host)
 
 
 def _build_message(professional: Professional, appointment: Appointment) -> EmailMessage:
@@ -50,7 +83,7 @@ def send_appointment_email(professional: Professional, appointment: Appointment)
     email_message = _build_message(professional, appointment)
 
     try:
-        with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:
+        with _IPv4SMTP_SSL(smtp_host, smtp_port) as server:
             server.login(smtp_user, smtp_password)
             server.send_message(email_message)
     except (smtplib.SMTPException, OSError) as exc:
