@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: psico-agente
+    runtime: docker
+    plan: free
+    dockerfilePath: ./psico-agente/Dockerfile
+    dockerContext: ./psico-agente
+    healthCheckPath: /healthz
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-5
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "465"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: DB_PATH
+        value: /srv/app/data/appointments.db
+    # El plan "free" no soporta disco persistente: la base de turnos se
+    # reinicia en cada redeploy. Cuando quieras que los turnos agendados
+    # sean permanentes, cambiá "plan" a "starter" (~7 USD/mes) y descomentá
+    # este bloque para montar un disco persistente en la misma ruta de DB_PATH:
+    #
+    # disk:
+    #   name: turnos-data
+    #   mountPath: /srv/app/data
+    #   sizeGB: 1

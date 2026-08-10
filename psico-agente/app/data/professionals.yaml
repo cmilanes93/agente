@@ -1,0 +1,18 @@
+professionals:
+  - id: carlos-milanes
+    name: "Carlos Manuel Milanes"
+    email: "c.milanes93@gmail.com"
+    specialty: "Psicología clínica"
+    bio: >
+      Atención psicológica individual para adultos, modalidad presencial
+      y por videollamada.
+    session_duration_minutes: 50
+    # Horarios en formato 24hs, zona horaria America/Argentina/Buenos_Aires.
+    availability:
+      monday: ["09:00-13:00", "15:00-18:00"]
+      tuesday: ["09:00-13:00"]
+      wednesday: ["09:00-13:00", "15:00-18:00"]
+      thursday: ["09:00-13:00"]
+      friday: ["09:00-13:00"]
+      saturday: []
+      sunday: []

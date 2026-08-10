@@ -1,0 +1,130 @@
+:root {
+  --bg: #faf7f2;
+  --surface: #ffffff;
+  --text: #2f2b26;
+  --muted: #7a7267;
+  --accent: #7a9e8c;
+  --accent-dark: #5f8571;
+  --patient-bubble: #eef2ee;
+  --agent-bubble: #ffffff;
+  --border: #e6e0d6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.header {
+  padding: 1.5rem 1rem 1rem;
+  text-align: center;
+}
+
+.header h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.4rem;
+  color: var(--accent-dark);
+}
+
+.header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.chat {
+  flex: 1;
+  max-width: 640px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  overflow-y: auto;
+}
+
+.bubble {
+  max-width: 80%;
+  padding: 0.65rem 0.9rem;
+  border-radius: 14px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.bubble.patient {
+  align-self: flex-end;
+  background: var(--accent);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.bubble.agent {
+  align-self: flex-start;
+  background: var(--agent-bubble);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+}
+
+.bubble.pending {
+  opacity: 0.6;
+}
+
+.composer {
+  display: flex;
+  gap: 0.5rem;
+  max-width: 640px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0.75rem 1rem;
+}
+
+.composer input {
+  flex: 1;
+  padding: 0.7rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 1rem;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.composer input:focus {
+  outline: 2px solid var(--accent);
+}
+
+.composer button {
+  padding: 0.7rem 1.3rem;
+  border-radius: 999px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.composer button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.composer button:not(:disabled):hover {
+  background: var(--accent-dark);
+}
+
+.footer {
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--muted);
+  padding: 0.6rem 1rem 1.2rem;
+}

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Atención psicológica · Turnos</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="header">
+      <h1>Espacio de atención psicológica</h1>
+      <p>Contanos qué necesitás y te ayudamos a coordinar un turno.</p>
+    </header>
+
+    <main class="chat" id="chat"></main>
+
+    <form class="composer" id="composer">
+      <input
+        id="input"
+        type="text"
+        autocomplete="off"
+        placeholder="Escribí tu mensaje..."
+        maxlength="2000"
+      />
+      <button type="submit">Enviar</button>
+    </form>
+
+    <footer class="footer">
+      Este espacio no reemplaza una atención de emergencia. Si estás en una
+      situación de riesgo, llamá al 911 o a una línea de emergencia local.
+    </footer>
+
+    <script src="/chat.js"></script>
+  </body>
+</html>
