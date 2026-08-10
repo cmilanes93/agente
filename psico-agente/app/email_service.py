@@ -13,41 +13,53 @@ from app.scheduling import Appointment, format_datetime_es
 
 logger = logging.getLogger(__name__)
 
+# Algunos hostings tardan mucho (minutos) en tirar el connect si el puerto
+# está bloqueado en vez de rechazado. Con un timeout corto, la falla se ve
+# rápido en vez de colgar el chat.
+_CONNECT_TIMEOUT_SECONDS = 15
+
 
 class EmailSendError(Exception):
     """No se pudo enviar el mail de aviso."""
 
 
-class _IPv4SMTP_SSL(smtplib.SMTP_SSL):
-    """SMTP_SSL forzando IPv4.
+def _ipv4_connect(host: str, port: int, timeout: float) -> socket.socket:
+    """Conecta por TCP forzando IPv4, con fallback entre direcciones.
 
     Algunos hostings (Render incluido) resuelven smtp.gmail.com a una
     dirección IPv6 sin tener una ruta de salida IPv6 funcional, lo que da
     "OSError: [Errno 101] Network is unreachable" al conectar — nada que
-    ver con el usuario/contraseña. Forzamos la conexión por IPv4.
+    ver con el usuario/contraseña.
     """
+    addr_info = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+    last_error: OSError | None = None
+
+    for family, socktype, proto, _, sockaddr in addr_info:
+        raw_socket = socket.socket(family, socktype, proto)
+        try:
+            raw_socket.settimeout(timeout)
+            raw_socket.connect(sockaddr)
+            return raw_socket
+        except OSError as exc:
+            last_error = exc
+            raw_socket.close()
+
+    raise last_error or OSError("No se pudo resolver una dirección IPv4 para el servidor SMTP.")
+
+
+class _IPv4SMTP_SSL(smtplib.SMTP_SSL):
+    """SMTP_SSL (puerto 465, TLS implícito) forzando IPv4."""
 
     def _get_socket(self, host, port, timeout):
-        addr_info = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
-        last_error: OSError | None = None
-        raw_socket: socket.socket | None = None
-
-        for family, socktype, proto, _, sockaddr in addr_info:
-            try:
-                raw_socket = socket.socket(family, socktype, proto)
-                if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
-                    raw_socket.settimeout(timeout)
-                raw_socket.connect(sockaddr)
-                break
-            except OSError as exc:
-                last_error = exc
-                if raw_socket is not None:
-                    raw_socket.close()
-                raw_socket = None
-        else:
-            raise last_error or OSError("No se pudo resolver una dirección IPv4 para el servidor SMTP.")
-
+        raw_socket = _ipv4_connect(host, port, _CONNECT_TIMEOUT_SECONDS)
         return self.context.wrap_socket(raw_socket, server_hostname=self._host)
+
+
+class _IPv4SMTP(smtplib.SMTP):
+    """SMTP con STARTTLS (puerto 587 típicamente) forzando IPv4."""
+
+    def _get_socket(self, host, port, timeout):
+        return _ipv4_connect(host, port, _CONNECT_TIMEOUT_SECONDS)
 
 
 def _build_message(professional: Professional, appointment: Appointment) -> EmailMessage:
@@ -81,11 +93,18 @@ def send_appointment_email(professional: Professional, appointment: Appointment)
         raise EmailSendError(message)
 
     email_message = _build_message(professional, appointment)
+    use_starttls = smtp_port != 465
 
     try:
-        with _IPv4SMTP_SSL(smtp_host, smtp_port) as server:
-            server.login(smtp_user, smtp_password)
-            server.send_message(email_message)
+        if use_starttls:
+            with _IPv4SMTP(smtp_host, smtp_port, timeout=_CONNECT_TIMEOUT_SECONDS) as server:
+                server.starttls()
+                server.login(smtp_user, smtp_password)
+                server.send_message(email_message)
+        else:
+            with _IPv4SMTP_SSL(smtp_host, smtp_port, timeout=_CONNECT_TIMEOUT_SECONDS) as server:
+                server.login(smtp_user, smtp_password)
+                server.send_message(email_message)
     except (smtplib.SMTPException, OSError) as exc:
         # OSError además de SMTPException: cubre fallos de red/DNS/timeout
         # al conectar, que smtplib no envuelve en una excepción propia.

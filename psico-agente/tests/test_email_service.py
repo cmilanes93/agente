@@ -1,9 +1,13 @@
 import socket
 import ssl
+from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytest
 
+from app import email_service
+from app.config import Professional
+from app.scheduling import TZ, Appointment
 from app.email_service import _IPv4SMTP_SSL
 
 
@@ -57,3 +61,85 @@ def test_ipv4_smtp_ssl_raises_when_every_address_fails(monkeypatch):
 
     with pytest.raises(OSError, match="Network is unreachable"):
         instance._get_socket("smtp.gmail.com", 465, 10)
+
+
+def _fake_appointment_and_professional():
+    professional = Professional(
+        id="carlos-milanes",
+        name="Carlos Manuel Milanes",
+        email="c.milanes93@gmail.com",
+        specialty="Psicología clínica",
+        bio="",
+        session_duration_minutes=50,
+        availability={},
+    )
+    appointment = Appointment(
+        id=1,
+        professional_id="carlos-milanes",
+        start_at=datetime.now(TZ),
+        duration_minutes=50,
+        patient_name="Ana",
+        patient_contact="ana@example.com",
+        reason=None,
+    )
+    return professional, appointment
+
+
+class _FakeServer:
+    def __init__(self):
+        self.starttls_called = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+    def starttls(self):
+        self.starttls_called = True
+
+    def login(self, user, password):
+        pass
+
+    def send_message(self, message):
+        pass
+
+
+def test_send_appointment_email_uses_starttls_on_port_587(monkeypatch):
+    professional, appointment = _fake_appointment_and_professional()
+    monkeypatch.setenv("SMTP_HOST", "smtp.gmail.com")
+    monkeypatch.setenv("SMTP_PORT", "587")
+    monkeypatch.setenv("SMTP_USER", "c.milanes93@gmail.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "app-password")
+
+    fake_server = _FakeServer()
+    monkeypatch.setattr(email_service, "_IPv4SMTP", lambda *a, **k: fake_server)
+    monkeypatch.setattr(
+        email_service,
+        "_IPv4SMTP_SSL",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no debería usar SSL en el puerto 587")),
+    )
+
+    email_service.send_appointment_email(professional, appointment)
+
+    assert fake_server.starttls_called is True
+
+
+def test_send_appointment_email_uses_ssl_on_port_465(monkeypatch):
+    professional, appointment = _fake_appointment_and_professional()
+    monkeypatch.setenv("SMTP_HOST", "smtp.gmail.com")
+    monkeypatch.setenv("SMTP_PORT", "465")
+    monkeypatch.setenv("SMTP_USER", "c.milanes93@gmail.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "app-password")
+
+    fake_server = _FakeServer()
+    monkeypatch.setattr(email_service, "_IPv4SMTP_SSL", lambda *a, **k: fake_server)
+    monkeypatch.setattr(
+        email_service,
+        "_IPv4SMTP",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no debería usar STARTTLS en el puerto 465")),
+    )
+
+    email_service.send_appointment_email(professional, appointment)
+
+    assert fake_server.starttls_called is False
