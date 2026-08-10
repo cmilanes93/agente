@@ -1,5 +1,5 @@
-import socket
-import ssl
+import json
+import urllib.error
 from datetime import datetime
 from unittest.mock import MagicMock
 
@@ -8,59 +8,6 @@ import pytest
 from app import email_service
 from app.config import Professional
 from app.scheduling import TZ, Appointment
-from app.email_service import _IPv4SMTP_SSL
-
-
-def test_ipv4_smtp_ssl_forces_af_inet_and_falls_back(monkeypatch):
-    seen_family = {}
-
-    def fake_getaddrinfo(host, port, family, socktype):
-        seen_family["value"] = family
-        return [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("1.1.1.1", port)),
-            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("2.2.2.2", port)),
-        ]
-
-    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
-
-    failing_socket = MagicMock()
-    failing_socket.connect.side_effect = OSError("Network is unreachable")
-    working_socket = MagicMock()
-    sockets = iter([failing_socket, working_socket])
-    monkeypatch.setattr(socket, "socket", lambda *a, **k: next(sockets))
-
-    instance = _IPv4SMTP_SSL.__new__(_IPv4SMTP_SSL)
-    instance.context = ssl.create_default_context()
-    instance._host = "smtp.gmail.com"
-    monkeypatch.setattr(
-        instance.context,
-        "wrap_socket",
-        lambda sock, server_hostname: ("wrapped", sock, server_hostname),
-    )
-
-    result = instance._get_socket("smtp.gmail.com", 465, 10)
-
-    assert seen_family["value"] == socket.AF_INET
-    failing_socket.close.assert_called_once()
-    assert result == ("wrapped", working_socket, "smtp.gmail.com")
-
-
-def test_ipv4_smtp_ssl_raises_when_every_address_fails(monkeypatch):
-    def fake_getaddrinfo(host, port, family, socktype):
-        return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("1.1.1.1", port))]
-
-    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
-
-    failing_socket = MagicMock()
-    failing_socket.connect.side_effect = OSError("Network is unreachable")
-    monkeypatch.setattr(socket, "socket", lambda *a, **k: failing_socket)
-
-    instance = _IPv4SMTP_SSL.__new__(_IPv4SMTP_SSL)
-    instance.context = ssl.create_default_context()
-    instance._host = "smtp.gmail.com"
-
-    with pytest.raises(OSError, match="Network is unreachable"):
-        instance._get_socket("smtp.gmail.com", 465, 10)
 
 
 def _fake_appointment_and_professional():
@@ -85,61 +32,70 @@ def _fake_appointment_and_professional():
     return professional, appointment
 
 
-class _FakeServer:
-    def __init__(self):
-        self.starttls_called = False
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc_info):
-        return False
-
-    def starttls(self):
-        self.starttls_called = True
-
-    def login(self, user, password):
-        pass
-
-    def send_message(self, message):
-        pass
-
-
-def test_send_appointment_email_uses_starttls_on_port_587(monkeypatch):
+def test_send_appointment_email_missing_api_key(monkeypatch):
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
     professional, appointment = _fake_appointment_and_professional()
-    monkeypatch.setenv("SMTP_HOST", "smtp.gmail.com")
-    monkeypatch.setenv("SMTP_PORT", "587")
-    monkeypatch.setenv("SMTP_USER", "c.milanes93@gmail.com")
-    monkeypatch.setenv("SMTP_PASSWORD", "app-password")
 
-    fake_server = _FakeServer()
-    monkeypatch.setattr(email_service, "_IPv4SMTP", lambda *a, **k: fake_server)
-    monkeypatch.setattr(
-        email_service,
-        "_IPv4SMTP_SSL",
-        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no debería usar SSL en el puerto 587")),
-    )
+    with pytest.raises(email_service.EmailSendError, match="RESEND_API_KEY"):
+        email_service.send_appointment_email(professional, appointment)
+
+
+def test_send_appointment_email_success(monkeypatch):
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    professional, appointment = _fake_appointment_and_professional()
+
+    captured = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return False
+
+        def read(self):
+            return b'{"id": "email_123"}'
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["headers"] = dict(request.headers)
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(email_service.urllib.request, "urlopen", fake_urlopen)
 
     email_service.send_appointment_email(professional, appointment)
 
-    assert fake_server.starttls_called is True
+    assert captured["url"] == email_service.RESEND_API_URL
+    assert captured["headers"]["Authorization"] == "Bearer re_test_key"
+    assert captured["body"]["to"] == ["c.milanes93@gmail.com"]
+    assert "Ana" in captured["body"]["subject"]
 
 
-def test_send_appointment_email_uses_ssl_on_port_465(monkeypatch):
+def test_send_appointment_email_http_error(monkeypatch):
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
     professional, appointment = _fake_appointment_and_professional()
-    monkeypatch.setenv("SMTP_HOST", "smtp.gmail.com")
-    monkeypatch.setenv("SMTP_PORT", "465")
-    monkeypatch.setenv("SMTP_USER", "c.milanes93@gmail.com")
-    monkeypatch.setenv("SMTP_PASSWORD", "app-password")
 
-    fake_server = _FakeServer()
-    monkeypatch.setattr(email_service, "_IPv4SMTP_SSL", lambda *a, **k: fake_server)
-    monkeypatch.setattr(
-        email_service,
-        "_IPv4SMTP",
-        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no debería usar STARTTLS en el puerto 465")),
-    )
+    def fake_urlopen(request, timeout):
+        raise urllib.error.HTTPError(
+            email_service.RESEND_API_URL, 422, "Unprocessable", {}, MagicMock(read=lambda: b'{"message":"bad from"}')
+        )
 
-    email_service.send_appointment_email(professional, appointment)
+    monkeypatch.setattr(email_service.urllib.request, "urlopen", fake_urlopen)
 
-    assert fake_server.starttls_called is False
+    with pytest.raises(email_service.EmailSendError, match="422"):
+        email_service.send_appointment_email(professional, appointment)
+
+
+def test_send_appointment_email_network_error(monkeypatch):
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    professional, appointment = _fake_appointment_and_professional()
+
+    def fake_urlopen(request, timeout):
+        raise urllib.error.URLError("timed out")
+
+    monkeypatch.setattr(email_service.urllib.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(email_service.EmailSendError, match="timed out"):
+        email_service.send_appointment_email(professional, appointment)

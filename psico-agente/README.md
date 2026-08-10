@@ -24,15 +24,16 @@ Agent (app/agent.py) ── llama a Claude (Anthropic API) con tools
    │                                    libres a partir de la agenda menos
    │                                    los turnos ya guardados en SQLite)
    └── book_appointment               → guarda el turno + envía mail
-                                         (app/email_service.py, SMTP)
+                                         (app/email_service.py, API de Resend
+                                          por HTTPS — no usa SMTP)
 ```
 
 ## Desarrollo local
 
-Requisitos: Python 3.11+, una API key de Anthropic, y una contraseña de
-aplicación de Gmail (para probar el envío real de mails; si no la tenés
-todavía, el turno se agenda igual y el chat te avisa que no se pudo mandar
-el mail).
+Requisitos: Python 3.11+, una API key de Anthropic, y una API key de
+[Resend](https://resend.com) para probar el envío real de mails (si no la
+tenés todavía, el turno se agenda igual y el chat te avisa que no se pudo
+mandar el mail).
 
 ```bash
 cd psico-agente
@@ -63,19 +64,37 @@ pytest
 |---|---|
 | `ANTHROPIC_API_KEY` | Autenticar con la API de Claude. |
 | `ANTHROPIC_MODEL` | Modelo a usar (default `claude-sonnet-5`). |
-| `SMTP_HOST` / `SMTP_PORT` | Servidor SMTP (default Gmail: `smtp.gmail.com` / `465`). |
-| `SMTP_USER` | Cuenta de Gmail que envía el mail (`c.milanes93@gmail.com`). |
-| `SMTP_PASSWORD` | Contraseña de aplicación de Gmail (no tu contraseña normal). |
+| `RESEND_API_KEY` | API key de [resend.com](https://resend.com) para mandar el mail de aviso. |
+| `RESEND_FROM` | Remitente del mail (default `Turnos <onboarding@resend.com>`, ver abajo). |
 | `DB_PATH` | Dónde se guarda el SQLite con los turnos agendados. |
 | `ADMIN_TOKEN` | Token propio (cualquier string largo) para consultar `/api/admin/appointments`. Sin esta variable, el endpoint queda deshabilitado. |
 
-### Generar la contraseña de aplicación de Gmail
+### Por qué Resend y no Gmail/SMTP directo
 
-1. Activá la verificación en 2 pasos en tu cuenta de Google (si no la
-   tenés activada, `myaccount.google.com/security`).
-2. Andá a `myaccount.google.com/apppasswords`.
-3. Creá una contraseña de aplicación (nombre libre, ej: "psico-agente").
-   Google te da un código de 16 caracteres — ese es tu `SMTP_PASSWORD`.
+Probamos primero con Gmail por SMTP (puertos 465 y 587) y ambos fallaron
+con errores de red (`Network is unreachable`, `timed out`) al desplegar en
+Render — el hosting bloquea el tráfico saliente por esos puertos como
+medida anti-spam, algo común en varios proveedores (Render, Heroku,
+Railway...). Resend expone una API HTTP normal (HTTPS, puerto 443), que no
+se bloquea nunca — el mismo camino que ya usa la llamada a la API de
+Claude.
+
+### Crear la API key de Resend
+
+1. Creá una cuenta gratis en [resend.com](https://resend.com) — el free
+   tier alcanza de sobra para este uso (100 mails/día).
+2. En el dashboard: **API Keys** → **Create API Key**. Copiá el valor
+   (empieza con `re_`) — ese es tu `RESEND_API_KEY`.
+3. **Importante sin dominio propio verificado:** sin verificar un dominio
+   en Resend, solo podés mandar mails a la dirección con la que te
+   registraste en Resend. Como el profesional (`c.milanes93@gmail.com`) es
+   quien recibe los avisos, esto no es un problema — solo asegurate de
+   registrarte en Resend con esa misma dirección. Si más adelante agregás
+   otro profesional con otro mail, para avisarle vas a necesitar verificar
+   un dominio propio en Resend (Resend te guía en el paso).
+4. Dejá `RESEND_FROM` como está (`Turnos <onboarding@resend.com>`) — es el
+   remitente de pruebas de Resend, válido mientras no tengas dominio
+   propio verificado.
 
 ## Si falla el envío de mail (o cualquier otra cosa)
 
@@ -87,13 +106,13 @@ real de dos formas:
 
 ### 1. Los logs de Render
 
-Cada error queda logueado con el motivo exacto (código de SMTP, timeout,
-variable faltante, etc). En el dashboard de Render: entrá al servicio →
+Cada error queda logueado con el motivo exacto (código HTTP de Resend,
+timeout, variable faltante, etc). En el dashboard de Render: entrá al servicio →
 pestaña **Logs**. Buscá líneas que empiecen con `ERROR` — ahí vas a ver
 algo como:
 
 ```
-ERROR app.tools: Turno #3 agendado pero falló el aviso por mail: (535, b'5.7.8 Username and Password not accepted...')
+ERROR app.tools: Turno #3 agendado pero falló el aviso por mail: Resend devolvió 403: {"message":"...","name":"validation_error"}
 ```
 
 ### 2. El endpoint de turnos con mail fallido
@@ -111,20 +130,18 @@ Ejemplo, abriendo la URL directo en el navegador:
 https://psico-agente.onrender.com/api/admin/appointments?token=tu-token-secreto&only_failed=true
 ```
 
-### Causas típicas de que Gmail rechace el envío
+### Causas típicas de que Resend rechace el envío
 
-1. **Usaste tu contraseña normal de Gmail en vez de una contraseña de
-   aplicación.** Gmail la rechaza siempre que la verificación en 2 pasos
-   esté activada — que es requisito para poder generar la contraseña de
-   aplicación. Volvé a generar una en `myaccount.google.com/apppasswords`
-   y actualizá `SMTP_PASSWORD` en Render.
-2. **No activaste la verificación en 2 pasos** en la cuenta de Google —
-   sin eso, la opción de contraseñas de aplicación ni aparece.
-3. **`SMTP_USER` o `SMTP_PASSWORD` no están seteadas** en Render (o tienen
-   un espacio de más al copiar/pegar). El error en los logs en este caso
-   dice explícitamente "Faltan las variables de entorno".
-4. **La contraseña de aplicación se generó para otra cuenta** distinta de
-   la que pusiste en `SMTP_USER`.
+1. **`RESEND_API_KEY` no está seteada** en Render, o tiene un espacio de
+   más al copiar/pegar. El log dice explícitamente "Falta la variable de
+   entorno RESEND_API_KEY".
+2. **El destinatario no es la dirección con la que te registraste en
+   Resend** (ver arriba) — sin dominio propio verificado, Resend solo
+   entrega a esa dirección. Si el `email` del profesional en
+   `professionals.yaml` no coincide con tu cuenta de Resend, va a
+   rechazarlo.
+3. **La API key se borró o se regeneró** en el dashboard de Resend después
+   de configurarla en Render — generá una nueva y actualizá la variable.
 
 Después de corregir la variable en Render, hacé un **Manual Deploy** (o
 esperá el próximo redeploy) para que tome el cambio.
@@ -152,8 +169,7 @@ El repo ya incluye `render.yaml` en la raíz (`/render.yaml`), un
    pases a mí por chat**):
    - `ANTHROPIC_API_KEY` — la generás en
      [console.anthropic.com](https://console.anthropic.com) → API Keys.
-   - `SMTP_USER` — `c.milanes93@gmail.com`
-   - `SMTP_PASSWORD` — la contraseña de aplicación de Gmail (ver arriba).
+   - `RESEND_API_KEY` — la generás en resend.com (ver arriba).
 4. Confirmar el deploy. Render te va a dar una URL tipo
    `https://psico-agente.onrender.com` (subdominio gratis).
 
@@ -163,7 +179,7 @@ El repo ya incluye `render.yaml` en la raíz (`/render.yaml`), un
 2. Conectá el repo `cmilanes93/agente` y elegí la rama que quieras
    desplegar (la rama con este código).
 3. Render detecta `render.yaml` y te muestra el servicio `psico-agente` a
-   crear. Completá las 3 variables secretas del punto anterior.
+   crear. Completá las 2 variables secretas del punto anterior.
 4. Click en **Apply** / **Create Blueprint**. El primer build tarda unos
    minutos (arma la imagen Docker).
 5. Cuando termine, entrá a la URL que te dio Render y probá el chat.

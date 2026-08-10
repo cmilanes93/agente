@@ -11,14 +11,10 @@ services:
         sync: false
       - key: ANTHROPIC_MODEL
         value: claude-sonnet-5
-      - key: SMTP_HOST
-        value: smtp.gmail.com
-      - key: SMTP_PORT
-        value: "465"
-      - key: SMTP_USER
+      - key: RESEND_API_KEY
         sync: false
-      - key: SMTP_PASSWORD
-        sync: false
+      - key: RESEND_FROM
+        value: "Turnos <onboarding@resend.com>"
       - key: DB_PATH
         value: /srv/app/data/appointments.db
       - key: ADMIN_TOKEN
