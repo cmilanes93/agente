@@ -22,6 +22,12 @@ logger = logging.getLogger(__name__)
 
 RESEND_API_URL = "https://api.resend.com/emails"
 REQUEST_TIMEOUT_SECONDS = 15
+# Remitente de sandbox de Resend: no requiere verificar un dominio propio,
+# pero solo entrega al mail con el que te registraste en Resend. Sirve
+# para este caso (un solo profesional = el dueño de la cuenta de Resend).
+# Para mandar a otras direcciones hace falta verificar un dominio propio
+# y setear RESEND_FROM con una dirección de ese dominio.
+DEFAULT_FROM = "onboarding@resend.dev"
 
 
 class EmailSendError(Exception):
@@ -50,14 +56,10 @@ def _build_payload(professional: Professional, appointment: Appointment, from_ad
 
 def send_appointment_email(professional: Professional, appointment: Appointment) -> None:
     api_key = os.environ.get("RESEND_API_KEY")
-    from_address = os.environ.get("RESEND_FROM")
+    from_address = os.environ.get("RESEND_FROM", DEFAULT_FROM)
 
-    if not api_key or not from_address:
-        # RESEND_FROM tiene que ser una dirección de un dominio verificado
-        # en Resend (Resend no tiene remitente de pruebas sin dominio
-        # propio) — ver README, sección "Crear la API key de Resend".
-        missing = "RESEND_API_KEY" if not api_key else "RESEND_FROM"
-        message = f"Falta la variable de entorno {missing}."
+    if not api_key:
+        message = "Falta la variable de entorno RESEND_API_KEY."
         logger.error("No se pudo enviar el mail del turno #%s: %s", appointment.id, message)
         raise EmailSendError(message)
 

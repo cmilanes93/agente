@@ -13,8 +13,6 @@ services:
         value: claude-sonnet-5
       - key: RESEND_API_KEY
         sync: false
-      - key: RESEND_FROM
-        sync: false
       - key: DB_PATH
         value: /srv/app/data/appointments.db
       - key: ADMIN_TOKEN

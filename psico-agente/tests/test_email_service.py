@@ -41,13 +41,33 @@ def test_send_appointment_email_missing_api_key(monkeypatch):
         email_service.send_appointment_email(professional, appointment)
 
 
-def test_send_appointment_email_missing_from(monkeypatch):
+def test_send_appointment_email_uses_sandbox_sender_by_default(monkeypatch):
     monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
     monkeypatch.delenv("RESEND_FROM", raising=False)
     professional, appointment = _fake_appointment_and_professional()
 
-    with pytest.raises(email_service.EmailSendError, match="RESEND_FROM"):
-        email_service.send_appointment_email(professional, appointment)
+    captured = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return False
+
+        def read(self):
+            return b'{"id": "email_123"}'
+
+    def fake_urlopen(request, timeout):
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        return FakeResponse()
+
+    monkeypatch.setattr(email_service.urllib.request, "urlopen", fake_urlopen)
+
+    email_service.send_appointment_email(professional, appointment)
+
+    assert captured["body"]["from"] == email_service.DEFAULT_FROM
+    assert email_service.DEFAULT_FROM == "onboarding@resend.dev"
 
 
 def test_send_appointment_email_success(monkeypatch):

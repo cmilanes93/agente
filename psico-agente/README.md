@@ -65,7 +65,7 @@ pytest
 | `ANTHROPIC_API_KEY` | Autenticar con la API de Claude. |
 | `ANTHROPIC_MODEL` | Modelo a usar (default `claude-sonnet-5`). |
 | `RESEND_API_KEY` | API key de [resend.com](https://resend.com) para mandar el mail de aviso. |
-| `RESEND_FROM` | Remitente del mail. Tiene que ser una dirección de un dominio verificado en Resend (ver abajo) — es obligatorio, no hay valor por defecto que funcione. |
+| `RESEND_FROM` | Opcional. Remitente del mail (default `onboarding@resend.dev`, el sandbox de Resend — ver abajo). |
 | `DB_PATH` | Dónde se guarda el SQLite con los turnos agendados. |
 | `ADMIN_TOKEN` | Token propio (cualquier string largo) para consultar `/api/admin/appointments`. Sin esta variable, el endpoint queda deshabilitado. |
 
@@ -79,34 +79,26 @@ Railway...). Resend expone una API HTTP normal (HTTPS, puerto 443), que no
 se bloquea nunca — el mismo camino que ya usa la llamada a la API de
 Claude.
 
-### Crear la API key de Resend (y por qué hace falta un dominio)
-
-Probamos primero sin dominio propio (remitente `onboarding@resend.com`) y
-Resend lo rechazó: **no existe ningún remitente de prueba sin verificar un
-dominio propio.** No es una limitación del plan gratis — es así para
-cualquier cuenta, en Resend y en cualquier proveedor de mail transaccional
-serio (SendGrid, Mailgun, Postmark funcionan igual), para evitar que
-cualquiera mande mail suplantando dominios ajenos. Es un paso único que
-hay que hacer sí o sí:
+### Crear la API key de Resend
 
 1. Creá una cuenta gratis en [resend.com](https://resend.com) — el free
-   tier alcanza de sobra para este uso (100 mails/día).
-2. **Si ya tenés un dominio propio** (de un sitio, un negocio, etc.),
-   usalo. **Si no tenés ninguno**, comprá uno barato (~10-15 USD/año, ej.
-   en [Namecheap](https://www.namecheap.com) o
-   [Porkbun](https://porkbun.com)) — no hace falta que sea elegante, algo
-   como `turnos-carlos.com` alcanza.
-3. En Resend: **Domains** → **Add Domain**. Te va a dar 2-3 registros DNS
-   (tipo TXT/CNAME, para SPF y DKIM) para agregar en el panel de DNS de
-   donde compraste el dominio. Una vez agregados, Resend los detecta solo
-   y marca el dominio como verificado (puede tardar unos minutos hasta una
-   hora).
-4. En el dashboard: **API Keys** → **Create API Key**. Copiá el valor
+   tier alcanza de sobra para este uso (100 mails/día). **Registrate con
+   la misma dirección que uses como profesional** en
+   `professionals.yaml` (`c.milanes93@gmail.com`) — ver por qué abajo.
+2. En el dashboard: **API Keys** → **Create API Key**. Copiá el valor
    (empieza con `re_`) — ese es tu `RESEND_API_KEY`.
-5. `RESEND_FROM` tiene que ser una dirección de ese dominio verificado,
-   por ejemplo `Turnos <turnos@turnos-carlos.com>`. El destinatario
-   (`professional.email` en `professionals.yaml`) puede ser cualquier
-   mail — ya no hay restricción de "solo a tu propia cuenta".
+3. Listo — no hace falta nada más para empezar. `RESEND_FROM` es opcional
+   y por default usa `onboarding@resend.dev`, el remitente de sandbox de
+   Resend, que no requiere verificar ningún dominio.
+
+**La restricción del sandbox:** sin dominio propio verificado, Resend solo
+entrega mails a la dirección con la que te registraste. Como el
+profesional que recibe los avisos sos vos mismo, esto no es un problema
+mientras uses la misma dirección en ambos lados. Si más adelante agregás
+otro profesional con otro mail, para avisarle vas a necesitar verificar un
+dominio propio en Resend (**Domains** → **Add Domain**, agregar los
+registros DNS que te da) y setear `RESEND_FROM` con una dirección de ese
+dominio.
 
 ## Si falla el envío de mail (o cualquier otra cosa)
 
@@ -147,10 +139,15 @@ https://psico-agente.onrender.com/api/admin/appointments?token=tu-token-secreto&
 1. **`RESEND_API_KEY` no está seteada** en Render, o tiene un espacio de
    más al copiar/pegar. El log dice explícitamente "Falta la variable de
    entorno RESEND_API_KEY".
-2. **`RESEND_FROM` no es de un dominio verificado** en Resend (Domains →
-   tiene que figurar como "Verified", no "Pending"). El mensaje de error
-   en este caso dice explícitamente "domain is not verified".
-3. **La API key se borró o se regeneró** en el dashboard de Resend después
+2. **El destinatario no es la dirección con la que te registraste en
+   Resend** (ver arriba) — sin dominio propio verificado, Resend solo
+   entrega a esa dirección. Si el `email` del profesional en
+   `professionals.yaml` no coincide con tu cuenta de Resend, lo rechaza.
+3. **Si seteaste `RESEND_FROM` manualmente** con una dirección de un
+   dominio propio que no está verificado en Resend (Domains → tiene que
+   figurar "Verified", no "Pending"). El error en este caso dice
+   explícitamente "domain is not verified".
+4. **La API key se borró o se regeneró** en el dashboard de Resend después
    de configurarla en Render — generá una nueva y actualizá la variable.
 
 Después de corregir la variable en Render, hacé un **Manual Deploy** (o
@@ -179,8 +176,8 @@ El repo ya incluye `render.yaml` en la raíz (`/render.yaml`), un
    pases a mí por chat**):
    - `ANTHROPIC_API_KEY` — la generás en
      [console.anthropic.com](https://console.anthropic.com) → API Keys.
-   - `RESEND_API_KEY` y `RESEND_FROM` — ver arriba ("Crear la API key de
-     Resend"), necesitás un dominio propio verificado primero.
+   - `RESEND_API_KEY` — ver arriba ("Crear la API key de Resend"). No
+     hace falta `RESEND_FROM` para arrancar.
 4. Confirmar el deploy. Render te va a dar una URL tipo
    `https://psico-agente.onrender.com` (subdominio gratis).
 
@@ -190,7 +187,7 @@ El repo ya incluye `render.yaml` en la raíz (`/render.yaml`), un
 2. Conectá el repo `cmilanes93/agente` y elegí la rama que quieras
    desplegar (la rama con este código).
 3. Render detecta `render.yaml` y te muestra el servicio `psico-agente` a
-   crear. Completá las 3 variables secretas del punto anterior.
+   crear. Completá las 2 variables secretas del punto anterior.
 4. Click en **Apply** / **Create Blueprint**. El primer build tarda unos
    minutos (arma la imagen Docker).
 5. Cuando termine, entrá a la URL que te dio Render y probá el chat.
