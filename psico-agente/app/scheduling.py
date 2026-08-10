@@ -81,10 +81,18 @@ def init_db() -> None:
                 patient_contact TEXT NOT NULL,
                 reason TEXT,
                 created_at TEXT NOT NULL,
+                email_sent INTEGER NOT NULL DEFAULT 0,
+                email_error TEXT,
                 UNIQUE(professional_id, start_at)
             )
             """
         )
+        # Migración liviana para bases creadas antes de agregar estas columnas.
+        existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(appointments)")}
+        if "email_sent" not in existing_columns:
+            conn.execute("ALTER TABLE appointments ADD COLUMN email_sent INTEGER NOT NULL DEFAULT 0")
+        if "email_error" not in existing_columns:
+            conn.execute("ALTER TABLE appointments ADD COLUMN email_error TEXT")
 
 
 def _parse_time(value: str) -> time:
@@ -171,3 +179,26 @@ def book_appointment(
         patient_contact=patient_contact,
         reason=reason,
     )
+
+
+def mark_email_status(appointment_id: int, sent: bool, error: str | None = None) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE appointments SET email_sent = ?, email_error = ? WHERE id = ?",
+            (1 if sent else 0, error, appointment_id),
+        )
+
+
+def list_appointments(limit: int = 50, only_failed: bool = False) -> list[dict]:
+    columns = [
+        "id", "professional_id", "start_at", "patient_name", "patient_contact",
+        "reason", "created_at", "email_sent", "email_error",
+    ]
+    query = f"SELECT {', '.join(columns)} FROM appointments"
+    if only_failed:
+        query += " WHERE email_sent = 0"
+    query += " ORDER BY created_at DESC LIMIT ?"
+
+    with _connect() as conn:
+        rows = conn.execute(query, (limit,)).fetchall()
+    return [dict(zip(columns, row)) for row in rows]

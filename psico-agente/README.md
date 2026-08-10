@@ -67,6 +67,7 @@ pytest
 | `SMTP_USER` | Cuenta de Gmail que envía el mail (`c.milanes93@gmail.com`). |
 | `SMTP_PASSWORD` | Contraseña de aplicación de Gmail (no tu contraseña normal). |
 | `DB_PATH` | Dónde se guarda el SQLite con los turnos agendados. |
+| `ADMIN_TOKEN` | Token propio (cualquier string largo) para consultar `/api/admin/appointments`. Sin esta variable, el endpoint queda deshabilitado. |
 
 ### Generar la contraseña de aplicación de Gmail
 
@@ -75,6 +76,58 @@ pytest
 2. Andá a `myaccount.google.com/apppasswords`.
 3. Creá una contraseña de aplicación (nombre libre, ej: "psico-agente").
    Google te da un código de 16 caracteres — ese es tu `SMTP_PASSWORD`.
+
+## Si falla el envío de mail (o cualquier otra cosa)
+
+Si `book_appointment` no puede mandar el mail, **el turno igual queda
+agendado** — nunca se pierde una reserva por un problema de mail. Al
+paciente se le muestra un mensaje genérico ("hubo un problema técnico
+avisando al profesional"), sin el detalle técnico. Vos podés ver el motivo
+real de dos formas:
+
+### 1. Los logs de Render
+
+Cada error queda logueado con el motivo exacto (código de SMTP, timeout,
+variable faltante, etc). En el dashboard de Render: entrá al servicio →
+pestaña **Logs**. Buscá líneas que empiecen con `ERROR` — ahí vas a ver
+algo como:
+
+```
+ERROR app.tools: Turno #3 agendado pero falló el aviso por mail: (535, b'5.7.8 Username and Password not accepted...')
+```
+
+### 2. El endpoint de turnos con mail fallido
+
+`GET /api/admin/appointments?token=TU_ADMIN_TOKEN&only_failed=true`
+
+Te devuelve en JSON los turnos agendados cuyo mail no se pudo mandar, con
+el motivo (`email_error`) y los datos del paciente para que lo contactes
+manualmente si hace falta. Necesitás configurar `ADMIN_TOKEN` (ver tabla de
+variables arriba) — sin esa variable, el endpoint devuelve 401 siempre.
+
+Ejemplo, abriendo la URL directo en el navegador:
+
+```
+https://psico-agente.onrender.com/api/admin/appointments?token=tu-token-secreto&only_failed=true
+```
+
+### Causas típicas de que Gmail rechace el envío
+
+1. **Usaste tu contraseña normal de Gmail en vez de una contraseña de
+   aplicación.** Gmail la rechaza siempre que la verificación en 2 pasos
+   esté activada — que es requisito para poder generar la contraseña de
+   aplicación. Volvé a generar una en `myaccount.google.com/apppasswords`
+   y actualizá `SMTP_PASSWORD` en Render.
+2. **No activaste la verificación en 2 pasos** en la cuenta de Google —
+   sin eso, la opción de contraseñas de aplicación ni aparece.
+3. **`SMTP_USER` o `SMTP_PASSWORD` no están seteadas** en Render (o tienen
+   un espacio de más al copiar/pegar). El error en los logs en este caso
+   dice explícitamente "Faltan las variables de entorno".
+4. **La contraseña de aplicación se generó para otra cuenta** distinta de
+   la que pusiste en `SMTP_USER`.
+
+Después de corregir la variable en Render, hacé un **Manual Deploy** (o
+esperá el próximo redeploy) para que tome el cambio.
 
 ## Agregar más profesionales
 
@@ -130,11 +183,14 @@ guardados de forma permanente:
 ### Otras limitaciones de esta primera versión
 
 - Un solo profesional cargado (vos). Agregar más es editar un YAML.
-- No hay pantalla de administración para ver/cancelar turnos — se
-  consultan directo en la base SQLite o por mail (cada turno te llega por
-  mail).
+- No hay pantalla de administración visual — hay un endpoint JSON protegido
+  (`/api/admin/appointments`, ver arriba) para consultar turnos y errores de
+  mail, pero no una interfaz para verlos/cancelarlos con un click.
 - No hay autenticación ni protección anti-spam en el chat público. Si en
   algún momento el uso lo justifica, se puede sumar un captcha o rate
   limiting.
 - El chat no envía confirmación por mail al paciente, solo al profesional
   (se puede agregar fácil si lo querés).
+- Si el mail falla, no hay reintento automático — el turno queda marcado
+  como "mail no enviado" en la base y vos lo ves por el endpoint de admin
+  o los logs.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any, Callable
 
@@ -9,6 +10,9 @@ from app.config import Professional, load_professionals
 from app.email_service import EmailSendError, send_appointment_email
 from app.scheduling import TZ, SlotUnavailable, format_datetime_es, generate_available_slots
 from app.scheduling import book_appointment as _book_appointment
+from app.scheduling import mark_email_status
+
+logger = logging.getLogger(__name__)
 
 MAX_SLOTS_PER_PROFESSIONAL = 8
 
@@ -118,9 +122,15 @@ def book_appointment(
 
     try:
         send_appointment_email(professional, appointment)
+        mark_email_status(appointment.id, sent=True)
         email_status = "Se avisó al profesional por mail."
     except EmailSendError as exc:
-        email_status = f"El turno quedó agendado, pero no se pudo avisar por mail ({exc})."
+        mark_email_status(appointment.id, sent=False, error=str(exc))
+        logger.error("Turno #%s agendado pero falló el aviso por mail: %s", appointment.id, exc)
+        email_status = (
+            "El turno quedó agendado y registrado. Hubo un problema técnico avisando "
+            "al profesional por mail automáticamente, pero el equipo puede verlo igual."
+        )
 
     when = format_datetime_es(appointment.start_at)
     return f"Turno confirmado con {professional.name} el {when}. {email_status}"

@@ -70,6 +70,10 @@ def test_book_appointment_sends_email(fake_professionals, monkeypatch):
     assert "avisó al profesional por mail" in result
     assert sent["appointment"].patient_name == "Ana"
 
+    [row] = scheduling.list_appointments()
+    assert row["email_sent"] == 1
+    assert row["email_error"] is None
+
 
 def test_book_appointment_email_failure_keeps_booking(fake_professionals, monkeypatch):
     def fake_send(professional, appointment):
@@ -87,7 +91,13 @@ def test_book_appointment_email_failure_keeps_booking(fake_professionals, monkey
     )
 
     assert "quedó agendado" in result
-    assert "no se pudo avisar por mail" in result
+    # El detalle técnico del error no se le muestra al paciente...
+    assert "smtp caído" not in result
+
+    # ...pero sí queda registrado en la base para que el profesional lo consulte.
+    [row] = scheduling.list_appointments(only_failed=True)
+    assert row["email_sent"] == 0
+    assert row["email_error"] == "smtp caído"
 
 
 def test_book_appointment_unknown_professional(fake_professionals):

@@ -21,6 +21,8 @@ services:
         sync: false
       - key: DB_PATH
         value: /srv/app/data/appointments.db
+      - key: ADMIN_TOKEN
+        sync: false
     # El plan "free" no soporta disco persistente: la base de turnos se
     # reinicia en cada redeploy. Cuando quieras que los turnos agendados
     # sean permanentes, cambiá "plan" a "starter" (~7 USD/mes) y descomentá
