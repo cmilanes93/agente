@@ -14,7 +14,7 @@ services:
       - key: RESEND_API_KEY
         sync: false
       - key: RESEND_FROM
-        value: "Turnos <onboarding@resend.com>"
+        sync: false
       - key: DB_PATH
         value: /srv/app/data/appointments.db
       - key: ADMIN_TOKEN

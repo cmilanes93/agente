@@ -34,14 +34,25 @@ def _fake_appointment_and_professional():
 
 def test_send_appointment_email_missing_api_key(monkeypatch):
     monkeypatch.delenv("RESEND_API_KEY", raising=False)
+    monkeypatch.setenv("RESEND_FROM", "Turnos <turnos@midominio.com>")
     professional, appointment = _fake_appointment_and_professional()
 
     with pytest.raises(email_service.EmailSendError, match="RESEND_API_KEY"):
         email_service.send_appointment_email(professional, appointment)
 
 
+def test_send_appointment_email_missing_from(monkeypatch):
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    monkeypatch.delenv("RESEND_FROM", raising=False)
+    professional, appointment = _fake_appointment_and_professional()
+
+    with pytest.raises(email_service.EmailSendError, match="RESEND_FROM"):
+        email_service.send_appointment_email(professional, appointment)
+
+
 def test_send_appointment_email_success(monkeypatch):
     monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    monkeypatch.setenv("RESEND_FROM", "Turnos <turnos@midominio.com>")
     professional, appointment = _fake_appointment_and_professional()
 
     captured = {}
@@ -78,6 +89,7 @@ def test_send_appointment_email_success(monkeypatch):
 
 def test_send_appointment_email_http_error(monkeypatch):
     monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    monkeypatch.setenv("RESEND_FROM", "Turnos <turnos@midominio.com>")
     professional, appointment = _fake_appointment_and_professional()
 
     def fake_urlopen(request, timeout):
@@ -93,6 +105,7 @@ def test_send_appointment_email_http_error(monkeypatch):
 
 def test_send_appointment_email_network_error(monkeypatch):
     monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    monkeypatch.setenv("RESEND_FROM", "Turnos <turnos@midominio.com>")
     professional, appointment = _fake_appointment_and_professional()
 
     def fake_urlopen(request, timeout):

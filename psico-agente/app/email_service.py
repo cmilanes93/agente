@@ -28,9 +28,8 @@ class EmailSendError(Exception):
     """No se pudo enviar el mail de aviso."""
 
 
-def _build_payload(professional: Professional, appointment: Appointment) -> dict:
+def _build_payload(professional: Professional, appointment: Appointment, from_address: str) -> dict:
     when = format_datetime_es(appointment.start_at)
-    from_address = os.environ.get("RESEND_FROM", "Turnos <onboarding@resend.com>")
 
     body = (
         "Se agendó un nuevo turno a través del agente de atención.\n\n"
@@ -51,12 +50,18 @@ def _build_payload(professional: Professional, appointment: Appointment) -> dict
 
 def send_appointment_email(professional: Professional, appointment: Appointment) -> None:
     api_key = os.environ.get("RESEND_API_KEY")
-    if not api_key:
-        message = "Falta la variable de entorno RESEND_API_KEY."
+    from_address = os.environ.get("RESEND_FROM")
+
+    if not api_key or not from_address:
+        # RESEND_FROM tiene que ser una dirección de un dominio verificado
+        # en Resend (Resend no tiene remitente de pruebas sin dominio
+        # propio) — ver README, sección "Crear la API key de Resend".
+        missing = "RESEND_API_KEY" if not api_key else "RESEND_FROM"
+        message = f"Falta la variable de entorno {missing}."
         logger.error("No se pudo enviar el mail del turno #%s: %s", appointment.id, message)
         raise EmailSendError(message)
 
-    payload = _build_payload(professional, appointment)
+    payload = _build_payload(professional, appointment, from_address)
     request = urllib.request.Request(
         RESEND_API_URL,
         data=json.dumps(payload).encode("utf-8"),
