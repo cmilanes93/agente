@@ -63,6 +63,12 @@ def send_appointment_email(professional: Professional, appointment: Appointment)
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            "Accept": "application/json",
+            # Sin un User-Agent "normal", Cloudflare (delante de la API de
+            # Resend) banea el default de urllib (Python-urllib/x.y) como
+            # bot y devuelve HTTP 403 "error code: 1010" antes de que la
+            # request llegue a Resend.
+            "User-Agent": "psico-agente/1.0 (+https://github.com/cmilanes93/agente)",
         },
         method="POST",
     )

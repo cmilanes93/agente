@@ -71,6 +71,9 @@ def test_send_appointment_email_success(monkeypatch):
     assert captured["headers"]["Authorization"] == "Bearer re_test_key"
     assert captured["body"]["to"] == ["c.milanes93@gmail.com"]
     assert "Ana" in captured["body"]["subject"]
+    # Sin un User-Agent "normal" Cloudflare banea el request delante de
+    # Resend con 403 "error code: 1010", aunque la API key sea válida.
+    assert captured["headers"]["User-agent"].startswith("psico-agente/")
 
 
 def test_send_appointment_email_http_error(monkeypatch):
